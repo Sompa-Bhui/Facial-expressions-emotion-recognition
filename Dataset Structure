@@ -1,0 +1,16 @@
+├── train
+│   ├── anger
+│   ├── disgust
+│   ├── fear
+│   ├── happy
+│   ├── neutral
+│   ├── sad
+│   └── surprise
+├── validation
+│   ├── anger
+│   ├── disgust
+│   ├── fear
+│   ├── happy
+│   ├── neutral
+│   ├── sad
+│   └── surprise
