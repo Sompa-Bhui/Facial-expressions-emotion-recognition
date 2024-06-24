@@ -1,0 +1,140 @@
+# Import necessary libraries
+import tensorflow as tf
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout
+from tensorflow.keras.optimizers import Adam
+from sklearn.metrics import classification_report, confusion_matrix
+import numpy as np
+import matplotlib.pyplot as plt
+import cv2
+import os
+
+# Constants
+IMG_SIZE = 48
+BATCH_SIZE = 64
+EPOCHS = 30
+NUM_CLASSES = 7
+
+# Define paths
+train_data_path = 'path/to/fer2013/train'      # Update this path to your dataset
+val_data_path = 'path/to/fer2013/validation'   # Update this path to your dataset
+
+# Data augmentation and preprocessing
+train_datagen = ImageDataGenerator(
+    rescale=1./255,
+    rotation_range=30,
+    width_shift_range=0.2,
+    height_shift_range=0.2,
+    shear_range=0.2,
+    zoom_range=0.2,
+    horizontal_flip=True,
+    fill_mode='nearest'
+)
+
+val_datagen = ImageDataGenerator(rescale=1./255)
+
+train_generator = train_datagen.flow_from_directory(
+    train_data_path,
+    target_size=(IMG_SIZE, IMG_SIZE),
+    batch_size=BATCH_SIZE,
+    color_mode='grayscale',
+    class_mode='categorical'
+)
+
+val_generator = val_datagen.flow_from_directory(
+    val_data_path,
+    target_size=(IMG_SIZE, IMG_SIZE),
+    batch_size=BATCH_SIZE,
+    color_mode='grayscale',
+    class_mode='categorical'
+)
+
+# Model building
+model = Sequential()
+
+model.add(Conv2D(32, (3, 3), input_shape=(IMG_SIZE, IMG_SIZE, 1), activation='relu'))
+model.add(MaxPooling2D(pool_size=(2, 2)))
+
+model.add(Conv2D(64, (3, 3), activation='relu'))
+model.add(MaxPooling2D(pool_size=(2, 2)))
+
+model.add(Conv2D(128, (3, 3), activation='relu'))
+model.add(MaxPooling2D(pool_size=(2, 2)))
+
+model.add(Flatten())
+model.add(Dense(128, activation='relu'))
+model.add(Dropout(0.5))
+model.add(Dense(NUM_CLASSES, activation='softmax'))
+
+model.compile(optimizer=Adam(learning_rate=0.001), loss='categorical_crossentropy', metrics=['accuracy'])
+
+# Model training
+history = model.fit(
+    train_generator,
+    steps_per_epoch=train_generator.samples // BATCH_SIZE,
+    validation_data=val_generator,
+    validation_steps=val_generator.samples // BATCH_SIZE,
+    epochs=EPOCHS
+)
+
+# Save the model
+model.save('emotion_recognition_model.h5')
+
+# Evaluate the model
+y_true = val_generator.classes
+y_pred = model.predict(val_generator)
+y_pred_classes = np.argmax(y_pred, axis=1)
+
+print('Confusion Matrix')
+print(confusion_matrix(y_true, y_pred_classes))
+
+print('Classification Report')
+target_names = list(val_generator.class_indices.keys())
+print(classification_report(y_true, y_pred_classes, target_names=target_names))
+
+# Visualization of training
+plt.plot(history.history['accuracy'], label='accuracy')
+plt.plot(history.history['val_accuracy'], label='val_accuracy')
+plt.xlabel('Epoch')
+plt.ylabel('Accuracy')
+plt.legend(loc='lower right')
+plt.show()
+
+# Using OpenCV to capture and recognize emotions from webcam
+def recognize_emotion(frame, model):
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+    faces = face_cascade.detectMultiScale(gray, 1.3, 5)
+
+    for (x, y, w, h) in faces:
+        roi_gray = gray[y:y + h, x:x + w]
+        roi_gray = cv2.resize(roi_gray, (IMG_SIZE, IMG_SIZE))
+        roi_gray = roi_gray / 255.0
+        roi_gray = roi_gray.reshape(1, IMG_SIZE, IMG_SIZE, 1)
+
+        prediction = model.predict(roi_gray)
+        max_index = np.argmax(prediction[0])
+        emotion = target_names[max_index]
+
+        cv2.putText(frame, emotion, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (36, 255, 12), 2)
+        cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
+
+    return frame
+
+# Real-time emotion recognition
+cap = cv2.VideoCapture(0)
+
+while True:
+    ret, frame = cap.read()
+    if not ret:
+        break
+
+    frame = recognize_emotion(frame, model)
+    cv2.imshow('Emotion Recognition', frame)
+
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
